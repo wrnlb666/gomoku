@@ -56,9 +56,6 @@ volatile    bool    quit    = false;
 
 void main_loop( SDL_Window *win, SDL_Renderer *ren )
 {
-    SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
-    SDL_RenderClear( ren );
-
     // handle event
     while ( SDL_PollEvent( &event ) )
     {
@@ -78,6 +75,11 @@ void main_loop( SDL_Window *win, SDL_Renderer *ren )
     }
 
 
+
+    SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
+    SDL_RenderClear( ren );
+
+    SDL_RenderPresent( ren );
 }
 
 
@@ -148,16 +150,16 @@ int main( int argc, char** argv )
     SDL_Init( SDL_INIT_EVERYTHING );
     SDL_Window      *win    = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
                                                 config.width, config.height, 
-                                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | 
-                                                ( config.fullscreen ? SDL_WINDOW_FULLSCREEN : 0 ) );
+                                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN );
     if ( win == NULL )
     {
-        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "窗口创建失败", NULL);
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "窗口创建失败", NULL );
         return 1;
     }
-    SDL_Renderer    *ren    = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
+    SDL_Renderer    *ren    = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE );
     if ( ren == NULL )
     {
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "渲染器创建失败", NULL );
         return 1;
     }
 
@@ -168,8 +170,9 @@ int main( int argc, char** argv )
         SDL_SetWindowFullscreen( win, SDL_WINDOW_FULLSCREEN );
     }
     SDL_DisplayMode dm = { 0 };
-    SDL_GetDesktopDisplayMode(0, &dm);
+    SDL_GetDesktopDisplayMode( 0, &dm );
     SDL_SetWindowMinimumSize( win, 800, 600 );
+
 
     
 
