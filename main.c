@@ -9,6 +9,10 @@
 #include <SDL2/SDL_audio.h>
 #include <zmq.h>
 
+#ifdef __EMSCRIPTEN__
+    #include <emscripten.h>
+#endif  // __EMSCRIPTEN__
+
 
 #define SCALE               0.75f
 #define D_WIDTH             800
@@ -46,10 +50,12 @@ uint8_t             status  = MENU;
 SDL_Event           event   = { 0 };
 setting             config  = { 0 };
 volatile    bool    quit    = false;
+SDL_Window*         win     = NULL;
+SDL_Renderer*       ren     = NULL;
 
 
 
-void main_loop( SDL_Window *win, SDL_Renderer *ren )
+void main_loop( void )
 {
     // handle event
     while ( SDL_PollEvent( &event ) )
@@ -59,7 +65,14 @@ void main_loop( SDL_Window *win, SDL_Renderer *ren )
             // quit event
             case ( SDL_QUIT ): 
             {
-                quit = true ;
+                quit = true;
+                // TODO: add emscripten support
+                #ifdef __EMSCRIPTEN__
+                    SDL_DestroyRenderer( ren );
+                    SDL_DestroyWindow( win );
+                    SDL_Quit();
+                    exit(0);
+                #endif  // __EMSCRIPTEN__
                 break;
             }
             // resize event
@@ -164,7 +177,7 @@ int main( int argc, char** argv )
 
     // init
     SDL_Init( SDL_INIT_EVERYTHING );
-    SDL_Window      *win    = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
+    win = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
                                                 config.width, config.height, 
                                                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN );
     if ( win == NULL )
@@ -172,7 +185,7 @@ int main( int argc, char** argv )
         SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "窗口创建失败", NULL );
         return 1;
     }
-    SDL_Renderer    *ren    = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE );
+    ren = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE );
     if ( ren == NULL )
     {
         SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "渲染器创建失败", NULL );
@@ -190,10 +203,15 @@ int main( int argc, char** argv )
 
 
     // start game
-    while ( !quit )
-    {
-        main_loop( win, ren );
-    }
+    #ifndef __EMSCRIPTEN__
+        while ( !quit )
+        {
+            main_loop();
+        }
+    #elif
+        emscripten_set_main_loop( main_loop, 60, 1 );
+    #endif  // __EMSCRIPTEN__
+
 
 
 
