@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <gc.h>
 #include <time.h>
 #include <signal.h>
@@ -46,10 +47,38 @@ typedef enum files
 
 
 // global variable
-uint8_t     status  = MENU;
-SDL_Event   event   = { 0 };
-setting     config  = { 0 };
+uint8_t             status  = MENU;
+SDL_Event           event   = { 0 };
+setting             config  = { 0 };
+volatile    bool    quit    = false;
 
+
+
+void main_loop( SDL_Window *win, SDL_Renderer *ren )
+{
+    SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
+    SDL_RenderClear( ren );
+
+    // handle event
+    while ( SDL_PollEvent( &event ) )
+    {
+        switch ( event.type )
+        {
+            case ( SDL_QUIT ): 
+            {
+                quit = true ;
+                break;
+            }
+            
+            default:
+            {
+                break;
+            }
+        }
+    }
+
+
+}
 
 
 int main( int argc, char** argv )
@@ -117,9 +146,13 @@ int main( int argc, char** argv )
 
     // init
     SDL_Init( SDL_INIT_EVERYTHING );
-    SDL_Window      *win    = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, SDL_WINDOW_RESIZABLE | SDL_WINDOW_INPUT_GRABBED | SDL_WINDOW_OPENGL );
+    SDL_Window      *win    = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
+                                                config.width, config.height, 
+                                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | 
+                                                ( config.fullscreen ? SDL_WINDOW_FULLSCREEN : 0 ) );
     if ( win == NULL )
     {
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "窗口创建失败");
         return 1;
     }
     SDL_Renderer    *ren    = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC );
@@ -135,10 +168,17 @@ int main( int argc, char** argv )
         SDL_SetWindowFullscreen( win, SDL_WINDOW_FULLSCREEN );
     }
     SDL_DisplayMode dm = { 0 };
-    SDL_SetWindowDisplayMode( win, )
+    SDL_GetDesktopDisplayMode(0, &dm);
+    SDL_SetWindowMinimumSize( win, 800, 600 );
+
+    
 
 
-
+    // start game
+    while ( !quit )
+    {
+        main_loop( win, ren );
+    }
 
 
 
