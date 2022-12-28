@@ -16,6 +16,8 @@
 
 #define SCALE               0.75f
 #define D_WIDTH             800
+#define HEADER_SCALE        4
+#define LINE                15
 
 // type defines
 typedef enum game_status
@@ -46,12 +48,15 @@ typedef enum files
 
 
 // global variable
-uint8_t             status  = MENU;
-SDL_Event           event   = { 0 };
-setting             config  = { 0 };
-volatile    bool    quit    = false;
-SDL_Window*         win     = NULL;
-SDL_Renderer*       ren     = NULL;
+uint8_t             status      = GAME;
+SDL_Event           event       = { 0 };
+setting             config      = { 0 };
+volatile    bool    quit        = false;
+SDL_Window*         win         = NULL;
+SDL_Renderer*       ren         = NULL;
+TTF_Font*           header      = NULL;
+TTF_Font*           body        = NULL;
+int8_t              font_size   = 0;
 
 
 
@@ -68,9 +73,16 @@ void main_loop( void )
                 quit = true;
                 // TODO: add emscripten support
                 #ifdef __EMSCRIPTEN__
+                    // save config file
+                    FILE* fp = fopen( "setting.config", "wb+" );
+                    fwrite( &config, sizeof (setting), 1, fp );
+                    fclose( fp );
+
+                    // clean up
                     SDL_DestroyRenderer( ren );
                     SDL_DestroyWindow( win );
                     SDL_Quit();
+                    TTF_Quit();
                     exit(0);
                 #endif  // __EMSCRIPTEN__
                 break;
@@ -82,15 +94,23 @@ void main_loop( void )
                 {
                     case ( SDL_WINDOWEVENT_MAXIMIZED ):
                     {
+                        // forbid window maximization
                         SDL_RestoreWindow( win );
                         break;
                     }
                     case ( SDL_WINDOWEVENT_RESIZED ):
                     {
+                        // get new window size and store to config file
                         config.height   = event.window.data2;
                         config.width    = (int) ( (float) event.window.data2 / SCALE );
                         SDL_SetWindowSize( win, config.width, config.height );
-                        // TODO: change font size when window is resized
+                        // change font size when window is resized
+                        TTF_CloseFont( header );
+                        TTF_CloseFont( body );
+                        font_size   = config.height / 50;
+                        header      = TTF_OpenFont( "font.ttf", font_size * HEADER_SCALE  );
+                        body        = TTF_OpenFont( "font.ttf", font_size );
+                        // TODO: Destroy old text surface and texture and create new surface and texture
                         break;
                     }
                     default: break;
@@ -103,10 +123,33 @@ void main_loop( void )
     }
 
 
-    // draw frame
+    // draw background
     SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
     SDL_RenderClear( ren );
 
+    if ( status == GAME )
+    {
+        // draw UI background
+        SDL_Rect UI_back = 
+        {
+            .x = config.height,
+            .y = 0,
+            .w = config.width - config.height,
+            .h = config.height,
+        };
+        SDL_SetRenderDrawColor( ren, 205, 175, 150, SDL_ALPHA_OPAQUE );
+        SDL_RenderFillRect( ren, &UI_back );
+
+        // draw board
+        SDL_SetRenderDrawColor( ren, 25, 25, 25, SDL_ALPHA_OPAQUE );
+        for ( int i = 1; i < LINE; i++ )
+        {
+            SDL_RenderDrawLine( ren, config.height / ( LINE ) * i, config.height / ( LINE ), 
+                                    config.height / ( LINE ) * i, config.height / ( LINE ) * ( LINE - 1 ) );
+            SDL_RenderDrawLine( ren, config.height / ( LINE ), config.height / ( LINE ) * i, 
+                                    config.height / ( LINE ) * ( LINE - 1 ), config.height / ( LINE ) * i );
+        }
+    }
 
     // present
     SDL_RenderPresent( ren );
@@ -199,7 +242,12 @@ int main( int argc, char** argv )
     SDL_SetWindowMinimumSize( win, D_WIDTH, D_WIDTH * SCALE );
 
 
-    
+    // init font
+    TTF_Init();
+    font_size   = config.height / 50;
+    header      = TTF_OpenFont( "font.ttf", font_size * HEADER_SCALE );
+    body        = TTF_OpenFont( "font.ttf", font_size );
+
 
 
     // start game
@@ -209,15 +257,22 @@ int main( int argc, char** argv )
             main_loop();
         }
     #elif
-        emscripten_set_main_loop( main_loop, 60, 1 );
+        emscripten_set_main_loop( main_loop, 0, true );
     #endif  // __EMSCRIPTEN__
 
+    // save config file
+    FILE* fp = fopen( "setting.config", "wb+" );
+    fwrite( &config, sizeof (setting), 1, fp );
+    fclose( fp );
 
 
 
+    TTF_CloseFont( header );
+    TTF_CloseFont( body );
     SDL_DestroyRenderer( ren );
     SDL_DestroyWindow( win );
     SDL_Quit();
+    TTF_Quit();
 
     return 0;
 }
