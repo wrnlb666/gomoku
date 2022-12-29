@@ -7,11 +7,14 @@
 #include <pthread.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
-#include <SDL2/SDL_audio.h>
-// #include <zmq.h>
+#include <SDL2/SDL_net.h>
+
+#include "helper.h"
+
 
 #ifdef __EMSCRIPTEN__
     #include <emscripten.h>
+    #include "helper.c"
 #endif  // __EMSCRIPTEN__
 
 
@@ -20,6 +23,7 @@
 #define HEADER_SCALE        4
 #define LINE                15
 #define FONT_SCALE          50
+#define D_HOST              "localhost"
 
 // type defines
 typedef enum game_status
@@ -272,12 +276,12 @@ int main( int argc, char** argv )
             {
                 case ( FONT_FILE ):
                 {
-                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "字体丢失", "请在文件夹内添加“font.ttf”字体文件", NULL );
+                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Font Missing", "Please add \"font.ttf\" into the current directory", NULL );
                     return 1;
                 }
                 case ( CONFIG_FILE ):
                 {
-                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "游戏配置文件丢失", "游戏配置文件丢失\n将使用默认配置", NULL );
+                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "config file missing", "config file missing\nwill use default setting", NULL );
                     config = (setting) 
                     {
                         .width      = D_WIDTH,
@@ -317,13 +321,13 @@ int main( int argc, char** argv )
                                                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN );
     if ( win == NULL )
     {
-        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "窗口创建失败", NULL );
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "Failed to create window", NULL );
         return 1;
     }
     ren = SDL_CreateRenderer( win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE );
     if ( ren == NULL )
     {
-        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "渲染器创建失败", NULL );
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERROR", "Failed to create renderer", NULL );
         return 1;
     }
 
@@ -339,6 +343,9 @@ int main( int argc, char** argv )
     header      = TTF_OpenFont( "font.ttf", font_size * HEADER_SCALE );
     body        = TTF_OpenFont( "font.ttf", font_size );
 
+
+    // init net
+    SDLNet_Init();
 
 
     // start game
@@ -363,8 +370,9 @@ int main( int argc, char** argv )
     TTF_CloseFont( body );
     SDL_DestroyRenderer( ren );
     SDL_DestroyWindow( win );
-    SDL_Quit();
+    SDLNet_Quit();
     TTF_Quit();
+    SDL_Quit();
 
     return 0;
 }
