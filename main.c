@@ -43,18 +43,25 @@ typedef struct setting
     uint16_t    height;
 } setting;
 
+typedef enum owner
+{
+    NONE,
+    BLACK,
+    WHITE,
+} owner;
+
 typedef struct piece
 {
     uint8_t     x;
     uint8_t     y;
-    bool        black;
+    uint8_t     player;
 } piece;
 
 typedef struct board_t
 {
     size_t      size;
     piece       pieces[ LINE * LINE ];
-    bool        black;
+    uint8_t     player;
 } board_t;
 
 typedef enum files
@@ -283,7 +290,7 @@ int main( int argc, char** argv )
             {
                 case ( FONT_FILE ):
                 {
-                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Font Missing", "Please add \"font.ttf\" into the current directory", NULL );
+                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Font Missing", "Please add \"font.ttf\" into assets directory", NULL );
                     return 1;
                 }
                 case ( CONFIG_FILE ):
