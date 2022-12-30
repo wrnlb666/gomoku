@@ -8,13 +8,14 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_net.h>
+#include <SDL2/SDL_image.h>
 
-#include "helper.h"
+// #include "helper.h"
 
 
 #ifdef __EMSCRIPTEN__
     #include <emscripten.h>
-    #include "helper.c"
+//  #include "helper.c"
 #endif  // __EMSCRIPTEN__
 
 
@@ -52,25 +53,34 @@ typedef enum owner
 
 typedef struct piece
 {
-    uint8_t     x;
-    uint8_t     y;
-    uint8_t     player;
+    uint8_t     x;                      // x axis
+    uint8_t     y;                      // y axis
+    uint8_t     player;                 // enum owner, which player does the piece belongs to
 } piece;
 
 typedef struct board_t
 {
-    size_t      size;
-    piece       pieces[ LINE * LINE ];
-    uint8_t     player;
+    size_t      size;                   // The current count of pieces
+    piece       pieces[ LINE * LINE ];  // The struct to store all of the pieces
+    uint8_t     player;                 // Which player is taking turn now. 
 } board_t;
+
+typedef struct message
+{
+    uint8_t     player;                 // to imply which player this client is
+    piece       new_piece;              // new piece to send/receive
+    char        text[48];               // text messgae to the other player
+    size_t      text_len;               // length of text
+} message;
 
 typedef enum files
 {
     CONFIG_FILE,
     FONT_FILE,
+    BLACK_FILE,
+    WHITE_FILE,
     FILE_MAX,
 } files;
-
 
 
 
@@ -88,12 +98,142 @@ TTF_Font*           header      = NULL;
 TTF_Font*           body        = NULL;
 int8_t              font_size   = 0;
 volatile    bool    quit        = false;
-_Atomic     bool    my_turn     = false;
+_Atomic     uint8_t curr_player = NONE;
 
 
 
+
+
+// helper method
+void SDL_RenderDrawCircle(SDL_Renderer * ren, int32_t x, int32_t y, int32_t radius)
+{
+   const int32_t diameter = (radius * 2);
+
+   int32_t cx = (radius - 1);
+   int32_t cy = 0;
+   int32_t tx = 1;
+   int32_t ty = 1;
+   int32_t error = (tx - diameter);
+
+   while ( cx >= cy )
+   {
+      //  Each of the following renders an octant of the circle
+      SDL_RenderDrawPoint(ren, x + cx, y - cy);
+      SDL_RenderDrawPoint(ren, x + cx, y + cy);
+      SDL_RenderDrawPoint(ren, x - cx, y - cy);
+      SDL_RenderDrawPoint(ren, x - cx, y + cy);
+      SDL_RenderDrawPoint(ren, x + cy, y - cx);
+      SDL_RenderDrawPoint(ren, x + cy, y + cx);
+      SDL_RenderDrawPoint(ren, x - cy, y - cx);
+      SDL_RenderDrawPoint(ren, x - cy, y + cx);
+
+      if (error <= 0)
+      {
+         ++cy;
+         error += ty;
+         ty += 2;
+      }
+
+      if (error > 0)
+      {
+         --cx;
+         tx += 2;
+         error += (tx - diameter);
+      }
+   }
+}
+
+void SDL_RenderFillCircle( SDL_Renderer *ren, int x, int y, int radius )
+{
+    for (int w = 0; w < radius * 2; w++)
+    {
+        for (int h = 0; h < radius * 2; h++)
+        {
+            int dx = radius - w; // horizontal offset
+            int dy = radius - h; // vertical offset
+            if ((dx*dx + dy*dy) <= (radius * radius))
+            {
+                SDL_RenderDrawPoint(ren, x + dx, y + dy);
+            }
+        }
+    }
+}
+
+void render_piece( SDL_Renderer* ren, int x, int y, uint8_t owner, bool opaque )
+{
+    if ( x == 0 && y == 0 )
+    {
+        return;
+    }
+    // find corresponding center of that piece
+    int px      = x * ( config.height / LINE );
+    int py      = y * ( config.height / LINE );
+    int radius  = ( config.height / LINE ) / 3;
+
+    // draw piece
+    // 225, 205, 175
+    if ( owner == WHITE && opaque == false )
+    {
+        SDL_SetRenderDrawColor( ren, 255, 255, 255, SDL_ALPHA_OPAQUE );
+        SDL_RenderFillCircle( ren, px, py, radius );
+        SDL_SetRenderDrawColor( ren, 25, 25, 25, SDL_ALPHA_OPAQUE );
+        SDL_RenderDrawCircle( ren, px, py, radius );
+    }
+    else if ( owner == WHITE && opaque == true )
+    {
+        SDL_SetRenderDrawColor( ren, 255, 255, 255, 127 );
+        SDL_RenderFillCircle( ren, px, py, radius );
+        SDL_SetRenderDrawColor( ren, 25, 25, 25, 127 );
+        SDL_RenderDrawCircle( ren, px, py, radius );
+    }
+    else if ( owner == BLACK && opaque == false )
+    {
+        SDL_SetRenderDrawColor( ren, 0, 0, 0, SDL_ALPHA_OPAQUE );
+        SDL_RenderFillCircle( ren, px, py, radius );
+    }
+    else if ( owner == BLACK && opaque == true )
+    {
+        SDL_SetRenderDrawColor( ren, 0, 0, 0, 127 );
+        SDL_RenderFillCircle( ren, px, py, radius );
+    }
+
+    return;
+}
+
+
+
+
+
+// game main loop
 void main_loop( void )
 {
+    // draw background
+    SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
+    SDL_RenderClear( ren );
+
+    // draw board background
+    SDL_Rect board_back = 
+    {
+        .x = ( config.height / LINE ) / 2,
+        .y = ( config.height / LINE ) / 2,
+        .w = config.height - ( config.height / LINE ),
+        .h = config.height - ( config.height / LINE ),
+    };
+    SDL_SetRenderDrawColor( ren, 225, 205, 175, SDL_ALPHA_OPAQUE );
+    SDL_RenderFillRect( ren, &board_back );
+
+    // draw UI background
+    SDL_Rect UI_back = 
+    {
+        .x = config.height,
+        .y = 0,
+        .w = config.width - config.height,
+        .h = config.height,
+    };
+    SDL_SetRenderDrawColor( ren, 205, 175, 150, SDL_ALPHA_OPAQUE );
+    SDL_RenderFillRect( ren, &UI_back );
+
+
     // handle event
     while ( SDL_PollEvent( &event ) )
     {
@@ -187,7 +327,7 @@ void main_loop( void )
                                 #endif // TEST
                                 
 
-                                // TODO: check if my_turn then display piece
+                                
                             }
                             // check which button of the UI part is clicked
                             else if ( event.button.x > config.height )
@@ -213,32 +353,6 @@ void main_loop( void )
     }
 
 
-    // draw background
-    SDL_SetRenderDrawColor( ren, 255, 225, 200, SDL_ALPHA_OPAQUE );
-    SDL_RenderClear( ren );
-
-    // draw board background
-    SDL_Rect board_back = 
-    {
-        .x = ( config.height / LINE ) / 2,
-        .y = ( config.height / LINE ) / 2,
-        .w = config.height - ( config.height / LINE ),
-        .h = config.height - ( config.height / LINE ),
-    };
-    SDL_SetRenderDrawColor( ren, 225, 205, 175, SDL_ALPHA_OPAQUE );
-    SDL_RenderFillRect( ren, &board_back );
-
-    // draw UI background
-    SDL_Rect UI_back = 
-    {
-        .x = config.height,
-        .y = 0,
-        .w = config.width - config.height,
-        .h = config.height,
-    };
-    SDL_SetRenderDrawColor( ren, 205, 175, 150, SDL_ALPHA_OPAQUE );
-    SDL_RenderFillRect( ren, &UI_back );
-
     switch ( status )
     {
         case ( GAME ):
@@ -251,6 +365,12 @@ void main_loop( void )
                                     config.height / ( LINE ) * i, config.height / ( LINE ) * ( LINE - 1 ) );
                 SDL_RenderDrawLine( ren, config.height / ( LINE ), config.height / ( LINE ) * i, 
                                     config.height / ( LINE ) * ( LINE - 1 ), config.height / ( LINE ) * i );
+            }
+            // draw ready piece
+            if ( 1 )
+            {
+                curr_player = BLACK;
+                render_piece( ren, board.pieces[board.size].x, board.pieces[board.size].y, curr_player, false );
             }
             // draw UI
             
@@ -279,8 +399,10 @@ int main( int argc, char** argv )
     DIR *dir = opendir( "./" );
     while( ( file = readdir(dir) ) != NULL )
     {
-        if( !strcmp( file->d_name, "font.ttf" ) ) file_check[ FONT_FILE ] = true;
-        else if( !strcmp( file->d_name, "setting.config" ) ) file_check[ CONFIG_FILE ] = true;
+        if ( !strcmp( file->d_name, "font.ttf" ) )              file_check[ FONT_FILE ]     = true;
+        else if ( !strcmp( file->d_name, "setting.config" ) )   file_check[ CONFIG_FILE ]   = true;
+        else if ( !strcmp( file->d_name, "black.png" ) )        file_check[ BLACK_FILE ]    = true;
+        else if ( !strcmp( file->d_name, "white.png" ) )        file_check[ WHITE_FILE ]    = true;
     }
     for(int i = 0; i < FILE_MAX; i++)
     {
@@ -359,7 +481,10 @@ int main( int argc, char** argv )
 
 
     // init net
-    SDLNet_Init();
+    if ( SDLNet_Init() )
+    {
+        SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Can not initialize network", win );
+    }
 
 
     // start game
