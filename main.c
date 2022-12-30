@@ -24,6 +24,7 @@
 #define LINE                15
 #define FONT_SCALE          50
 #define D_HOST              "localhost"
+#define D_PORT              4396
 
 // type defines
 typedef enum game_status
@@ -166,8 +167,8 @@ void main_loop( void )
                             if ( event.button.x < ( config.height - ( config.height / LINE ) / 2 ) && event.button.x > ( config.height / LINE ) / 2 && 
                                 event.button.y < ( config.height - ( config.height / LINE ) / 2 ) && event.button.y > ( config.height / LINE ) / 2)
                             {
-                                board.pieces[ board.size ].x = event.button.x / ( config.height / LINE );
-                                board.pieces[ board.size ].y = event.button.y / ( config.height / LINE );
+                                board.pieces[ board.size ].x = ( ( event.button.x + ( config.height / LINE ) / 2 ) ) / ( config.height / LINE );
+                                board.pieces[ board.size ].y = ( ( event.button.y + ( config.height / LINE ) / 2 ) ) / ( config.height / LINE );
                                 
 
                                 // debug report
@@ -187,6 +188,12 @@ void main_loop( void )
                                 
                             }
                         }
+                        break;
+                    }
+                    // menu click
+                    case (MENU):
+                    {
+                        
                         break;
                     }
                 }
