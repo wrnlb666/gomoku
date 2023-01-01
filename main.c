@@ -76,6 +76,7 @@ typedef enum files
     CONFIG_FILE,
     BLACK_FILE,
     WHITE_FILE,
+    CONFIRM_FILE,
     FILE_MAX,
 } files;
 
@@ -84,19 +85,20 @@ typedef enum files
 
 
 // global variable
-uint8_t             status      = GAME;
-int                 p_size      = 27;
-SDL_DisplayMode     dm          = { 0 };
-SDL_Event           event       = { 0 };
-setting             config      = { 0 };
-board_t             board       = { 0 };
-SDL_Rect*           pieces      = NULL;
-SDL_Window*         win         = NULL;
-SDL_Renderer*       ren         = NULL;
-SDL_Texture*        b_tex       = NULL;
-SDL_Texture*        w_tex       = NULL;
-volatile    bool    quit        = false;
-_Atomic     uint8_t curr_player = NONE;
+uint8_t             status              = GAME;         // game status
+int                 p_size              = 27;           // piece size
+SDL_DisplayMode     dm                  = { 0 };        // maybe unused?
+SDL_Event           event               = { 0 };        // global event
+setting             config              = { 0 };        // game setting
+board_t             board               = { 0 };        // local board
+SDL_Rect            pieces[LINE][LINE]  = { 0 };        // all the rect of which a piece should be at
+SDL_Window*         win                 = NULL;
+SDL_Renderer*       ren                 = NULL;
+SDL_Texture*        b_tex               = NULL;         // texture for black piece
+SDL_Texture*        w_tex               = NULL;         // texture for white piece
+SDL_Texture*        con_tex             = NULL;         // texture for confirm button
+volatile    bool    quit                = false;        // if the game should end or not
+_Atomic     uint8_t curr_player         = NONE;         // enum owner, which player is the current player
 
 
 
@@ -184,11 +186,26 @@ void main_loop( void )
                             config.width    = (int) ( (float) ( config.width + config.height / SCALE ) / 2 );
                             config.height   = (int) ( (float) config.width * SCALE );
                         }
+                        
                         SDL_SetWindowSize( win, config.width, config.height );
 
                         // TODO: Destroy old text surface and texture and create new surface and texture
                         // set piece size
                         p_size = ( config.height / LINE ) / 2;
+                        for ( int i = 0; i < LINE ; i++ )
+                        {
+                            for ( int j = 0; j < LINE; j++ )
+                            {
+                                pieces[i][j] = ( SDL_Rect )
+                                {
+                                    .h = p_size,
+                                    .w = p_size,
+                                    .x = config.height / LINE * i - p_size / 2,
+                                    .y = config.height / LINE * j - p_size / 2,
+                                };
+                            }
+                        }
+
 
                         break;
                     }
@@ -249,6 +266,7 @@ void main_loop( void )
     }
 
 
+    // Drawing
     switch ( status )
     {
         case ( GAME ):
@@ -262,20 +280,22 @@ void main_loop( void )
                 SDL_RenderDrawLine( ren, config.height / ( LINE ), config.height / ( LINE ) * i, 
                                     config.height / ( LINE ) * ( LINE - 1 ), config.height / ( LINE ) * i );
             }
-            // draw ready piece
-            SDL_Rect temp = 
-            {
-                .h = p_size,
-                .w = p_size,
-                .x = config.height / LINE * board.pieces[board.size].x - p_size / 2,
-                .y = config.height / LINE * board.pieces[board.size].y - p_size / 2,
-            };
+            // draw temp piece
+            // TODO: change texture accordingly
             if ( board.pieces[board.size].x != 0 && board.pieces[board.size].y != 0 )
             {
-                SDL_RenderCopy( ren, w_tex, NULL, &temp );
+                SDL_RenderCopy( ren, w_tex, NULL, &pieces[ board.pieces[board.size].x ][ board.pieces[board.size].y ] );
             }
 
             // draw UI
+            SDL_Rect con_button = 
+            {
+                .w = ( ( config.width - config.height ) / 3 ) * 2,
+                .x = config.height + ( config.width - config.height ) / 6,
+            };
+            con_button.h    = con_button.w / 2.6f;
+            con_button.y    = config.height * 2 / 3;
+            SDL_RenderCopy( ren, con_tex, NULL, &con_button );
             
 
             break;
@@ -312,6 +332,7 @@ int main( int argc, char** argv )
         if ( !strcmp( file->d_name, "setting.config" ) )        file_check[ CONFIG_FILE ]   = true;
         else if ( !strcmp( file->d_name, "black.png" ) )        file_check[ BLACK_FILE ]    = true;
         else if ( !strcmp( file->d_name, "white.png" ) )        file_check[ WHITE_FILE ]    = true;
+        else if ( !strcmp( file->d_name, "confirm.png" ) )      file_check[ CONFIRM_FILE ]  = true;
     }
     for(int i = 0; i < FILE_MAX; i++)
     {
@@ -332,16 +353,23 @@ int main( int argc, char** argv )
                     fclose( fp );
                     break;
                 }
-                case( BLACK_FILE ):
+                case ( BLACK_FILE ):
                 {
                     SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
                     return 1;
                 }
-                case( WHITE_FILE ):
+                case ( WHITE_FILE ):
                 {
                     SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
                     return 1;
                 }
+                case ( CONFIRM_FILE ):
+                {
+                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
+                    return 1;
+                }
+
+                default: break;
             }
         }
         else
@@ -400,10 +428,25 @@ int main( int argc, char** argv )
     #endif  // __EMSCRIPTEN__
     
     // load texture
-    w_tex = IMG_LoadTexture( ren, "white.png" );
-    b_tex = IMG_LoadTexture( ren, "black.png" );
-    assert( w_tex && b_tex );
-    pieces = malloc( sizeof ( SDL_Rect ) * LINE * LINE );
+    w_tex   = IMG_LoadTexture( ren, "white.png" );
+    b_tex   = IMG_LoadTexture( ren, "black.png" );
+    con_tex = IMG_LoadTexture( ren, "confirm.png" );
+    assert( w_tex && b_tex && con_tex );
+
+    // set the position of where each pieces should be at
+    for ( int i = 0; i < LINE ; i++ )
+    {
+        for ( int j = 0; j < LINE; j++ )
+        {
+            pieces[i][j] = ( SDL_Rect )
+            {
+                .h = p_size,
+                .w = p_size,
+                .x = config.height / LINE * i - p_size / 2,
+                .y = config.height / LINE * j - p_size / 2,
+            };
+        }
+    }
 
 
 
@@ -423,7 +466,6 @@ int main( int argc, char** argv )
     fwrite( &config, sizeof (setting), 1, fp );
     fclose( fp );
 
-    free( pieces );
     SDL_DestroyTexture( w_tex );
     SDL_DestroyTexture( b_tex );
     SDL_DestroyRenderer( ren );
