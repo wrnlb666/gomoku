@@ -19,14 +19,14 @@
 #endif  // __EMSCRIPTEN__
 
 
-#define SCALE               0.75f
-#define D_WIDTH             800
-#define HEADER_SCALE        4
-#define LINE                15
-#define D_HOST              "localhost"
-#define D_PORT              4396
-#define D_FONT              "Minimal5x7.ttf"
-#define F_COLOR             (SDL_Color) { 0, 25, 50, SDL_ALPHA_OPAQUE }//, (SDL_Color) { 155, 125, 200, SDL_ALPHA_OPAQUE }
+#define SCALE                   0.75f
+#define D_WIDTH                 800
+#define HEADER_SCALE            4
+#define LINE                    15
+#define D_HOST                  "localhost"
+#define D_PORT                  4396
+#define D_FONT                  "Minimal5x7.ttf"
+#define F_COLOR                 (SDL_Color) { 0, 25, 50, SDL_ALPHA_OPAQUE }//, (SDL_Color) { 155, 125, 200, SDL_ALPHA_OPAQUE }
 
 // type defines
 typedef enum game_status
@@ -84,20 +84,31 @@ typedef enum files
     FILE_MAX,
 } files;
 
+typedef enum curr_resolution
+{
+    P600,
+    P720,
+    P1080,
+    P1440,
+} curr_resolution;
+
 
 
 
 
 // global variable
 uint8_t             status              = MENU;         // game status
+uint8_t             curr_res            = P600;         // game resolution
 int                 p_size              = 0;            // piece size
 int                 h_size              = 48;           // header font size
 int                 b_size              = 24;           // body font size
+int                 room_id_num         = 0;            // room id
 SDL_DisplayMode     dm                  = { 0 };        // maybe unused?
 SDL_Event           event               = { 0 };        // global event
 setting             config              = { 0 };        // game setting
 board_t             board               = { 0 };        // local board
 SDL_Rect            pieces[LINE][LINE]  = { 0 };        // all the rect of which a piece should be at
+char                room_id_text[10]    = { 0 };        // get input for room id
 SDL_Window*         win                 = NULL;
 SDL_Renderer*       ren                 = NULL;
 SDL_Texture*        b_tex               = NULL;         // texture for black piece
@@ -108,6 +119,7 @@ volatile    bool    quit                = false;        // if the game should en
 _Atomic     uint8_t curr_player         = NONE;         // enum owner, which player is the current player
 
 
+
 // surface
 SDL_Surface*        menu_sur            = NULL;
 SDL_Surface*        con_sur             = NULL;
@@ -115,6 +127,15 @@ SDL_Surface*        setting_sur         = NULL;
 SDL_Surface*        create_sur          = NULL;
 SDL_Surface*        join_sur            = NULL;
 SDL_Surface*        exit_sur            = NULL;
+SDL_Surface*        res_sur             = NULL;
+SDL_Surface*        r600_sur            = NULL;
+SDL_Surface*        r720_sur            = NULL;
+SDL_Surface*        r1080_sur           = NULL;
+SDL_Surface*        r1440_sur           = NULL;
+SDL_Surface*        grid_sur            = NULL;
+SDL_Surface*        irid_sur            = NULL;
+SDL_Surface*        copy_sur            = NULL;
+SDL_Surface*        paste_sur           = NULL;
 
 // texture
 SDL_Texture*        menu_tex            = NULL;
@@ -123,6 +144,15 @@ SDL_Texture*        setting_tex         = NULL;
 SDL_Texture*        create_tex          = NULL;
 SDL_Texture*        join_tex            = NULL;
 SDL_Texture*        exit_tex            = NULL;
+SDL_Texture*        res_tex             = NULL;
+SDL_Texture*        r600_tex            = NULL;
+SDL_Texture*        r720_tex            = NULL;
+SDL_Texture*        r1080_tex           = NULL;
+SDL_Texture*        r1440_tex           = NULL;
+SDL_Texture*        grid_tex            = NULL;
+SDL_Texture*        irid_tex            = NULL;
+SDL_Texture*        copy_tex            = NULL;
+SDL_Texture*        paste_tex           = NULL;
 
 // texture posiiton
 SDL_Rect            menu_rec            = { 0 };
@@ -131,12 +161,19 @@ SDL_Rect            setting_rec         = { 0 };
 SDL_Rect            create_rec          = { 0 };
 SDL_Rect            join_rec            = { 0 };
 SDL_Rect            exit_rec            = { 0 };
+SDL_Rect            res_rec             = { 0 };
+SDL_Rect            reso_rec            = { 0 };
+SDL_Rect            grid_rec            = { 0 };
+SDL_Rect            irid_rec            = { 0 };
+SDL_Rect            irid_temp_rec       = { 0 };
+SDL_Rect            copy_rec            = { 0 };
+SDL_Rect            paste_rec           = { 0 };
 
 
 
 
 // change rect positiona and size
-void adjust_rect( void )
+void adjust_size( void )
 {
     // menu UI rect
     menu_rec = (SDL_Rect)
@@ -179,6 +216,55 @@ void adjust_rect( void )
     exit_rec.x      = ( config.height - exit_rec.w ) / 2;
     exit_rec.y      = config.height / 3 * 2;
 
+    res_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 12,
+        .h = config.height / 17,
+    };
+    res_rec.x       = ( config.height - res_rec.w ) / 2;
+    res_rec.y       = config.height / 3 * 1;
+
+    reso_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 9,
+        .h = config.height / 17,
+    };
+    reso_rec.x      = ( config.height - reso_rec.w ) / 2;
+    reso_rec.y      = config.height / 3 * 2;
+
+    grid_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 22,
+        .h = config.height / 17,
+    };
+    grid_rec.x      = ( config.height - grid_rec.w ) / 2;
+    grid_rec.y      = config.height / 3 * 1;
+
+    irid_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 8,
+        .h = config.height / 17,
+    };
+    irid_rec.x      = ( config.height - irid_rec.w ) / 2;
+    irid_rec.y      = config.height / 3 * 2;
+
+    irid_temp_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * strlen( room_id_text ),
+        .h = config.height / 17,
+    };
+    irid_temp_rec.x      = ( config.height - irid_temp_rec.w ) / 2;
+    irid_temp_rec.y      = config.height / 3 * 2;
+
+    paste_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 5,
+        .h = config.height / 17,
+    };
+    paste_rec.x     = irid_rec.x + irid_rec.w + config.height / 24;
+    paste_rec.y     = irid_rec.y;
+
+
 
     // game UI rect
     con_rec = (SDL_Rect)
@@ -189,6 +275,25 @@ void adjust_rect( void )
     con_rec.x    = ( config.height ) + ( config.width - config.height - con_rec.w ) / 2;
     con_rec.y    = config.height / 4 * 3;
 
+
+
+
+
+    // set piece size
+    p_size = ( config.height / LINE ) / 3 * 2;
+    for ( int i = 0; i < LINE ; i++ )
+    {
+        for ( int j = 0; j < LINE; j++ )
+        {
+            pieces[i][j] = ( SDL_Rect )
+            {
+                .h = p_size,
+                .w = p_size,
+                .x = config.height / LINE * i - p_size / 2,
+                .y = config.height / LINE * j - p_size / 2,
+            };
+        }
+    }
 
     return;
 }
@@ -205,30 +310,102 @@ void render_ui( void )
 
 void ui_click( void )
 {
-    if ( event.button.x > menu_rec.x && event.button.y > menu_rec.y && 
-    event.button.x < menu_rec.x + menu_rec.w && event.button.y < menu_rec.y + menu_rec.h )
+    if ( event.button.x >= menu_rec.x && event.button.y >= menu_rec.y && 
+    event.button.x <= menu_rec.x + menu_rec.w && event.button.y <= menu_rec.y + menu_rec.h )
     {
         status = MENU;
+        if ( SDL_IsTextInputActive() )
+        {
+            SDL_StopTextInput();
+        }
     }
     // create button
-    else if ( event.button.x > create_rec.x && event.button.y > create_rec.y && 
-    event.button.x < create_rec.x + create_rec.w && event.button.y < create_rec.y + create_rec.h )
+    else if ( event.button.x >= create_rec.x && event.button.y >= create_rec.y && 
+    event.button.x <= create_rec.x + create_rec.w && event.button.y <= create_rec.y + create_rec.h )
     {
         status = CREATE;
+        if ( SDL_IsTextInputActive() )
+        {
+            SDL_StopTextInput();
+        }
     }
     // join button
-    else if ( event.button.x > join_rec.x && event.button.y > join_rec.y && 
-    event.button.x < join_rec.x + join_rec.w && event.button.y < join_rec.y + join_rec.h )
+    else if ( event.button.x >= join_rec.x && event.button.y >= join_rec.y && 
+    event.button.x <= join_rec.x + join_rec.w && event.button.y <= join_rec.y + join_rec.h )
     {
         status = JOIN;
+        if ( !SDL_IsTextInputActive() )
+        {
+            SDL_StartTextInput();
+        }
     }
     // setting button
-    else if ( event.button.x > setting_rec.x && event.button.y > setting_rec.y && 
-    event.button.x < setting_rec.x + setting_rec.w && event.button.y < setting_rec.y + setting_rec.h )
+    else if ( event.button.x >= setting_rec.x && event.button.y >= setting_rec.y && 
+    event.button.x <= setting_rec.x + setting_rec.w && event.button.y <= setting_rec.y + setting_rec.h )
     {
         status = SETTING;
+        if ( SDL_IsTextInputActive() )
+        {
+            SDL_StopTextInput();
+        }
     }
     
+    return;
+}
+
+void clean_up( void )
+{
+    // save config file
+    FILE* fp = fopen( "setting.config", "wb+" );
+    fwrite( &config, sizeof (setting), 1, fp );
+    fclose( fp );
+
+    // free surface
+    SDL_FreeSurface( irid_sur );
+
+    // free texture
+    SDL_DestroyTexture( w_tex );
+    SDL_DestroyTexture( b_tex );
+    SDL_DestroyTexture( menu_tex );
+    SDL_DestroyTexture( con_tex );
+    SDL_DestroyTexture( setting_tex );
+    SDL_DestroyTexture( create_tex );
+    SDL_DestroyTexture( join_tex );
+    SDL_DestroyTexture( exit_tex );
+    SDL_DestroyTexture( res_tex );
+    SDL_DestroyTexture( r600_tex );
+    SDL_DestroyTexture( r720_tex );
+    SDL_DestroyTexture( r1080_tex );
+    SDL_DestroyTexture( r1440_tex );
+    SDL_DestroyTexture( grid_tex );
+    SDL_DestroyTexture( irid_tex );
+    SDL_DestroyTexture( copy_tex );
+    SDL_DestroyTexture( paste_tex );
+
+    // close font
+    TTF_CloseFont( h_font );
+    TTF_CloseFont( b_font );
+
+    // free renderer and window
+    SDL_DestroyRenderer( ren );
+    SDL_DestroyWindow( win );
+
+    // quit SDL
+    SDLNet_Quit();
+    TTF_Quit();
+    IMG_Quit();
+    SDL_Quit();
+
+}
+
+void adjust_rid( void )
+{
+    SDL_FreeSurface( irid_sur );
+    SDL_DestroyTexture( irid_tex );
+    adjust_size();
+    irid_sur    = TTF_RenderText_Blended( h_font, room_id_text, F_COLOR );
+    irid_tex    = SDL_CreateTextureFromSurface( ren, irid_sur );
+
     return;
 }
 
@@ -278,15 +455,7 @@ void main_loop( void )
                 quit = true;
                 // TODO: add emscripten support
                 #ifdef __EMSCRIPTEN__
-                    // save config file
-                    FILE* fp = fopen( "setting.config", "wb+" );
-                    fwrite( &config, sizeof (setting), 1, fp );
-                    fclose( fp );
-
-                    // clean up
-                    SDL_DestroyRenderer( ren );
-                    SDL_DestroyWindow( win );
-                    SDL_Quit();
+                    clean_up();
                     exit(0);
                 #endif  // __EMSCRIPTEN__
                 break;
@@ -320,32 +489,9 @@ void main_loop( void )
                         
                         SDL_SetWindowSize( win, config.width, config.height );
 
-                        // change font size
-                        // might be unecessary
-                        b_size = config.height / 25;
-                        h_size = b_size * 2;
-                        TTF_SetFontSize( h_font, h_size );
-                        TTF_SetFontSize( b_font, b_size );
 
                         // change rect position and size
-                        adjust_rect();
-
-
-                        // set piece size
-                        p_size = ( config.height / LINE ) / 3 * 2;
-                        for ( int i = 0; i < LINE ; i++ )
-                        {
-                            for ( int j = 0; j < LINE; j++ )
-                            {
-                                pieces[i][j] = ( SDL_Rect )
-                                {
-                                    .h = p_size,
-                                    .w = p_size,
-                                    .x = config.height / LINE * i - p_size / 2,
-                                    .y = config.height / LINE * j - p_size / 2,
-                                };
-                            }
-                        }
+                        adjust_size();
 
 
                         break;
@@ -396,6 +542,17 @@ void main_loop( void )
                     {
                         // menu button
                         ui_click();
+
+                        // exit button click detect
+                        if ( event.button.x >= exit_rec.x && event.button.y >= exit_rec.y && 
+                        event.button.x <= exit_rec.x + exit_rec.w && event.button.y <= exit_rec.y + exit_rec.y )
+                        {
+                            quit = true;
+                            #ifdef __EMSCRIPTEN__
+                                clean_up();
+                                emscripten_force_exit( 0 );
+                            #endif  // __EMSCRIPTEN__
+                        }
                         
                         
                         break;
@@ -412,16 +569,122 @@ void main_loop( void )
                     {
                         ui_click();
 
+                        // paste button
+                        if ( event.button.x >= paste_rec.x && event.button.y >= paste_rec.y && 
+                        event.button.x <= paste_rec.x + paste_rec.w && event.button.y <= paste_rec.y + paste_rec.y )
+                        {
+                            memset( room_id_text, 0, 10 );
+                            char* rid = SDL_GetClipboardText();
+                            strncpy( room_id_text, rid, 8 );
+                            SDL_free( rid );
+                            adjust_rid();
+                            #ifdef __EMSCRIPTEN__
+                                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "INFO", "Paste doesn't work in the browser.", win );
+                            #endif  // __EMSCRIPTEN__
+                        }
+
                         break;
                     }
                     case ( SETTING ):
                     {
                         ui_click();
 
+                        // resolution clicked detect
+                        if ( event.button.x >= reso_rec.x && event.button.y >= reso_rec.y && 
+                        event.button.x <= reso_rec.x + reso_rec.w && event.button.y <= reso_rec.y + reso_rec.y )
+                        {
+                            switch ( curr_res )
+                            {
+                                case ( P600 ):
+                                {
+                                    curr_res            = P720;
+                                    if ( dm.w >= 960 && dm.h >= 720 )
+                                    {
+                                        config.width    = 960;
+                                        config.height   = 720;
+                                    }
+                                    break;
+                                }
+                                case ( P720 ):
+                                {
+                                    curr_res            = P1080;
+                                    if ( dm.w >= 1440 && dm.h >= 1080 )
+                                    {
+                                        config.width    = 1440;
+                                        config.height   = 1080;
+                                    }
+                                    break;
+                                }
+                                case ( P1080 ):
+                                {
+                                    curr_res            = P1440;
+                                    if ( dm.w >= 1920 && dm.h >= 1440 )
+                                    {
+                                        config.width    = 1920;
+                                        config.height   = 1440;
+                                    }
+                                    break;
+                                }
+                                case ( P1440 ):
+                                {
+                                    curr_res        = P600;
+                                    config.width    = 800;
+                                    config.height   = 600;
+                                    break;
+                                }
+                                default: break;
+                            }
+                            if ( config.width <= dm.w && config.height <= dm.h )
+                            {
+                                SDL_SetWindowSize( win, config.width, config.height );
+                                adjust_size();
+                            }
+                        }
+
                         break;
                     }
                 }
 
+                break;
+            }
+            case ( SDL_TEXTINPUT ):
+            {
+                if ( status == JOIN )
+                {
+                    int len = strlen( room_id_text );
+                    if ( len < 8 )
+                    {
+                        strcat( room_id_text, event.text.text );
+                        adjust_rid();
+                    }
+                }
+                break;
+            }
+            case ( SDL_KEYDOWN ):
+            {
+                if ( status == JOIN )
+                {
+                    if ( event.key.keysym.sym == SDLK_BACKSPACE )
+                    {
+                        int len = strlen( room_id_text );
+                        if ( len )
+                        {
+                            room_id_text[len-1] = 0;
+                            adjust_rid();
+                        }
+                        adjust_size();
+                    }
+                    if ( event.key.keysym.sym == SDLK_RETURN )
+                    {
+                        room_id_num = atoi( room_id_text );
+                        if ( !room_id_num )
+                        {
+                            SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Invalid Room ID", win );
+                            memset( room_id_text, 0, 10 );
+                            adjust_rid();
+                        }
+                    }
+                }
                 break;
             }
             
@@ -447,6 +710,32 @@ void main_loop( void )
         {
             render_ui();
 
+            SDL_RenderCopy( ren, res_tex, NULL, &res_rec );
+            switch ( curr_res )
+            {
+                case ( P600 ):
+                {
+                    SDL_RenderCopy( ren, r600_tex, NULL, &reso_rec );
+                    break;
+                }
+                case ( P720 ):
+                {
+                    SDL_RenderCopy( ren, r720_tex, NULL, &reso_rec );
+                    break;
+                }
+                case ( P1080 ):
+                {
+                    SDL_RenderCopy( ren, r1080_tex, NULL, &reso_rec );
+                    break;
+                }
+                case ( P1440 ):
+                {
+                    SDL_RenderCopy( ren, r1440_tex, NULL, &reso_rec );
+                    break;
+                }
+                default: break;
+            }
+
             break;
         }
         case ( CREATE ):
@@ -458,6 +747,15 @@ void main_loop( void )
         case ( JOIN ):
         {
             render_ui();
+            
+            SDL_SetRenderDrawColor( ren, 255, 255, 255, SDL_ALPHA_OPAQUE );
+            SDL_RenderFillRect( ren, &irid_rec );
+            SDL_SetRenderDrawColor( ren, 25, 25, 25, SDL_ALPHA_OPAQUE );
+            SDL_RenderDrawRect( ren, &irid_rec );
+            SDL_RenderCopy( ren, grid_tex, NULL, &grid_rec );
+            SDL_RenderCopy( ren, irid_tex, NULL, &irid_temp_rec );
+            SDL_RenderCopy( ren, paste_tex, NULL, &paste_rec );
+            
 
             // text input box for room id
 
@@ -506,18 +804,12 @@ int main( int argc, char** argv )
     // get setting and font
     bool file_check[ FILE_MAX ] = { 0 };
     struct dirent* file;
-    #ifdef __EMSCRIPTEN__
-        DIR *dir = opendir( "assets" );
-        chdir( "assets" );
-    #endif  // __EMSCRIPTEN__
-    #ifndef __EMSCRIPTEN__
-        DIR *dir = opendir( "assets" );
-        chdir( "assets" );
-    #endif  // __EMSCRIPTEN__
+    DIR *dir = opendir( "assets" );
+    chdir( "assets" );
     while( ( file = readdir(dir) ) != NULL )
     {
         if ( !strcmp( file->d_name, "setting.config" ) )        file_check[ CONFIG_FILE ]   = true;
-        else if ( !strcmp( file->d_name, D_FONT ) )   file_check[ FONT_FILE ]     = true;
+        else if ( !strcmp( file->d_name, D_FONT ) )             file_check[ FONT_FILE ]     = true;
         else if ( !strcmp( file->d_name, "black.png" ) )        file_check[ BLACK_FILE ]    = true;
         else if ( !strcmp( file->d_name, "white.png" ) )        file_check[ WHITE_FILE ]    = true;
     }
@@ -568,6 +860,11 @@ int main( int argc, char** argv )
                     FILE* fp = fopen( "setting.config", "rb" );
                     fread( &config, sizeof (setting), 1, fp );
                     fclose( fp );
+                    // in wasm, config file cannot be stored to local disk, use default value every times
+                    #ifdef __EMSCRIPTEN__
+                        config.width    = D_WIDTH;
+                        config.height   = D_WIDTH * SCALE;
+                    #endif  // __EMSCRIPTEN__
                     break;
                 }
             }
@@ -596,6 +893,16 @@ int main( int argc, char** argv )
     // apply setting
     SDL_GetCurrentDisplayMode( 0, &dm );
     SDL_SetWindowMinimumSize( win, D_WIDTH, D_WIDTH * SCALE );
+    SDL_SetWindowMaximumSize( win, (int) ( (float) dm.h / SCALE ), dm.h );
+
+    // report error if display resolution is not valid
+    #ifndef __EMSCRIPTEN__
+        if ( dm.w < 800 || dm.h < 600 )
+        {
+            SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Display resolution not suitable", win );
+            return 1;
+        }
+    #endif  // __EMSCRIPTEN__
 
 
     // init net
@@ -649,6 +956,14 @@ int main( int argc, char** argv )
     create_sur  = TTF_RenderUTF8_Blended( h_font, "CREATE", F_COLOR );
     join_sur    = TTF_RenderUTF8_Blended( h_font, "JOIN" , F_COLOR );
     exit_sur    = TTF_RenderUTF8_Blended( h_font, "EXIT" , F_COLOR );
+    res_sur     = TTF_RenderUTF8_Blended( h_font, "RESOLUTION: " , F_COLOR );
+    r600_sur    = TTF_RenderUTF8_Blended( h_font, "800 X 600" , F_COLOR );
+    r720_sur    = TTF_RenderUTF8_Blended( h_font, "960 X 720" , F_COLOR );
+    r1080_sur   = TTF_RenderUTF8_Blended( h_font, "1440X1080" , F_COLOR );
+    r1440_sur   = TTF_RenderUTF8_Blended( h_font, "1920X1440" , F_COLOR );
+    grid_sur    = TTF_RenderUTF8_Blended( h_font, "Please Enter Room ID: ", F_COLOR );
+    copy_sur    = TTF_RenderUTF8_Blended( h_font, "copy", F_COLOR );
+    paste_sur   = TTF_RenderUTF8_Blended( h_font, "paste", F_COLOR );
     
 
 
@@ -659,6 +974,14 @@ int main( int argc, char** argv )
     create_tex  = SDL_CreateTextureFromSurface( ren, create_sur );
     join_tex    = SDL_CreateTextureFromSurface( ren, join_sur );
     exit_tex    = SDL_CreateTextureFromSurface( ren, exit_sur );
+    res_tex     = SDL_CreateTextureFromSurface( ren, res_sur );
+    r600_tex    = SDL_CreateTextureFromSurface( ren, r600_sur );
+    r720_tex    = SDL_CreateTextureFromSurface( ren, r720_sur );
+    r1080_tex   = SDL_CreateTextureFromSurface( ren, r1080_sur );
+    r1440_tex   = SDL_CreateTextureFromSurface( ren, r1440_sur );
+    grid_tex    = SDL_CreateTextureFromSurface( ren, grid_sur );
+    copy_tex    = SDL_CreateTextureFromSurface( ren, copy_sur );
+    paste_tex   = SDL_CreateTextureFromSurface( ren, paste_sur );
 
 
     // destroy surface after texture is created
@@ -668,11 +991,18 @@ int main( int argc, char** argv )
     SDL_FreeSurface( create_sur );
     SDL_FreeSurface( join_sur );
     SDL_FreeSurface( exit_sur );
+    SDL_FreeSurface( res_sur );
+    SDL_FreeSurface( r600_sur );
+    SDL_FreeSurface( r720_sur );
+    SDL_FreeSurface( r1080_sur );
+    SDL_FreeSurface( r1440_sur );
+    SDL_FreeSurface( grid_sur );
+    SDL_FreeSurface( copy_sur );
+    SDL_FreeSurface( paste_sur );
 
 
     // calculate rect position
-    adjust_rect();
-
+    adjust_size();
 
 
 
@@ -687,34 +1017,8 @@ int main( int argc, char** argv )
         emscripten_set_main_loop( main_loop, 0, true );
     #endif  // __EMSCRIPTEN__
 
-    // save config file
-    FILE* fp = fopen( "setting.config", "wb+" );
-    fwrite( &config, sizeof (setting), 1, fp );
-    fclose( fp );
-
-    // free texture
-    SDL_DestroyTexture( w_tex );
-    SDL_DestroyTexture( b_tex );
-    SDL_DestroyTexture( menu_tex );
-    SDL_DestroyTexture( con_tex );
-    SDL_DestroyTexture( setting_tex );
-    SDL_DestroyTexture( create_tex );
-    SDL_DestroyTexture( join_tex );
-    SDL_DestroyTexture( exit_tex );
-
-    // close font
-    TTF_CloseFont( h_font );
-    TTF_CloseFont( b_font );
-
-    // free renderer and window
-    SDL_DestroyRenderer( ren );
-    SDL_DestroyWindow( win );
-
-    // quit SDL
-    SDLNet_Quit();
-    TTF_Quit();
-    IMG_Quit();
-    SDL_Quit();
+    // clean up
+    clean_up();
 
     return 0;
 }
