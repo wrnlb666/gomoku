@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_net.h>
+#include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL_image.h>
 
 // #include "helper.h"
@@ -24,12 +25,15 @@
 #define LINE                15
 #define D_HOST              "localhost"
 #define D_PORT              4396
+#define D_FONT              "Minimal5x7.ttf"
+#define F_COLOR             (SDL_Color) { 0, 25, 50, SDL_ALPHA_OPAQUE }//, (SDL_Color) { 155, 125, 200, SDL_ALPHA_OPAQUE }
 
 // type defines
 typedef enum game_status
 {
     MENU,
-    LOBBY,
+    CREATE,
+    JOIN,
     SETTING,
     GAME,
     WIN,
@@ -65,18 +69,18 @@ typedef struct board_t
 
 typedef struct message
 {
+    int32_t     room_id;                // room id, most likely to be the thread id of that room at the server side
     uint8_t     player;                 // to imply which player this client is
     piece       new_piece;              // new piece to send/receive
-    char        text[48];               // text messgae to the other player
-    size_t      text_len;               // length of text
+    bool        timeout;                // if the current player or the opponent timeouts (auto win)
 } message;
 
 typedef enum files
 {
     CONFIG_FILE,
+    FONT_FILE,
     BLACK_FILE,
     WHITE_FILE,
-    CONFIRM_FILE,
     FILE_MAX,
 } files;
 
@@ -85,8 +89,10 @@ typedef enum files
 
 
 // global variable
-uint8_t             status              = GAME;         // game status
-int                 p_size              = 27;           // piece size
+uint8_t             status              = MENU;         // game status
+int                 p_size              = 0;            // piece size
+int                 h_size              = 48;           // header font size
+int                 b_size              = 24;           // body font size
 SDL_DisplayMode     dm                  = { 0 };        // maybe unused?
 SDL_Event           event               = { 0 };        // global event
 setting             config              = { 0 };        // game setting
@@ -96,13 +102,135 @@ SDL_Window*         win                 = NULL;
 SDL_Renderer*       ren                 = NULL;
 SDL_Texture*        b_tex               = NULL;         // texture for black piece
 SDL_Texture*        w_tex               = NULL;         // texture for white piece
-SDL_Texture*        con_tex             = NULL;         // texture for confirm button
+TTF_Font*           h_font              = NULL;         // header font, bigger size
+TTF_Font*           b_font              = NULL;         // body font, smaller size
 volatile    bool    quit                = false;        // if the game should end or not
 _Atomic     uint8_t curr_player         = NONE;         // enum owner, which player is the current player
 
 
+// surface
+SDL_Surface*        menu_sur            = NULL;
+SDL_Surface*        con_sur             = NULL;
+SDL_Surface*        setting_sur         = NULL;
+SDL_Surface*        create_sur          = NULL;
+SDL_Surface*        join_sur            = NULL;
+SDL_Surface*        exit_sur            = NULL;
+
+// texture
+SDL_Texture*        menu_tex            = NULL;
+SDL_Texture*        con_tex             = NULL;
+SDL_Texture*        setting_tex         = NULL;
+SDL_Texture*        create_tex          = NULL;
+SDL_Texture*        join_tex            = NULL;
+SDL_Texture*        exit_tex            = NULL;
+
+// texture posiiton
+SDL_Rect            menu_rec            = { 0 };
+SDL_Rect            con_rec             = { 0 };
+SDL_Rect            setting_rec         = { 0 };
+SDL_Rect            create_rec          = { 0 };
+SDL_Rect            join_rec            = { 0 };
+SDL_Rect            exit_rec            = { 0 };
 
 
+
+
+// change rect positiona and size
+void adjust_rect( void )
+{
+    // menu UI rect
+    menu_rec = (SDL_Rect)
+    {
+        .w = ( config.width - config.height ) / 8 * 4,
+        .h = config.height / 17,
+    };
+    menu_rec.x   = ( config.height ) + ( config.width - config.height - menu_rec.w ) / 2;
+    menu_rec.y   = config.height / 5 * 1;
+
+    setting_rec = (SDL_Rect)
+    {
+        .w = ( config.width - config.height ) / 8 * 7,
+        .h = config.height / 17,
+    };
+    setting_rec.x   = ( config.height ) + ( config.width - config.height - setting_rec.w ) / 2;
+    setting_rec.y   = config.height / 5 * 4;
+
+    create_rec = (SDL_Rect)
+    {
+        .w = ( config.width - config.height ) / 8 * 6,
+        .h = config.height / 17,
+    };
+    create_rec.x    = ( config.height ) + ( config.width - config.height - create_rec.w ) / 2;
+    create_rec.y    = config.height / 5 * 2;
+
+    join_rec = (SDL_Rect)
+    {
+        .w = ( config.width - config.height ) / 8 * 4,
+        .h = config.height / 17,
+    };
+    join_rec.x      = ( config.height ) + ( config.width - config.height - join_rec.w ) / 2;
+    join_rec.y      = config.height / 5 * 3;
+
+    exit_rec = (SDL_Rect)
+    {
+        .w = ( config.height ) / 24 * 4,
+        .h = config.height / 17,
+    };
+    exit_rec.x      = ( config.height - exit_rec.w ) / 2;
+    exit_rec.y      = config.height / 3 * 2;
+
+
+    // game UI rect
+    con_rec = (SDL_Rect)
+    {
+        .w = ( config.width - config.height ) / 8 * 7,
+        .h = config.height / 17,
+    };
+    con_rec.x    = ( config.height ) + ( config.width - config.height - con_rec.w ) / 2;
+    con_rec.y    = config.height / 4 * 3;
+
+
+    return;
+}
+
+void render_ui( void )
+{
+    SDL_RenderCopy( ren, menu_tex, NULL, &menu_rec );
+    SDL_RenderCopy( ren, setting_tex, NULL, &setting_rec );
+    SDL_RenderCopy( ren, create_tex, NULL, &create_rec );
+    SDL_RenderCopy( ren, join_tex, NULL, &join_rec );
+
+    return;
+}
+
+void ui_click( void )
+{
+    if ( event.button.x > menu_rec.x && event.button.y > menu_rec.y && 
+    event.button.x < menu_rec.x + menu_rec.w && event.button.y < menu_rec.y + menu_rec.h )
+    {
+        status = MENU;
+    }
+    // create button
+    else if ( event.button.x > create_rec.x && event.button.y > create_rec.y && 
+    event.button.x < create_rec.x + create_rec.w && event.button.y < create_rec.y + create_rec.h )
+    {
+        status = CREATE;
+    }
+    // join button
+    else if ( event.button.x > join_rec.x && event.button.y > join_rec.y && 
+    event.button.x < join_rec.x + join_rec.w && event.button.y < join_rec.y + join_rec.h )
+    {
+        status = JOIN;
+    }
+    // setting button
+    else if ( event.button.x > setting_rec.x && event.button.y > setting_rec.y && 
+    event.button.x < setting_rec.x + setting_rec.w && event.button.y < setting_rec.y + setting_rec.h )
+    {
+        status = SETTING;
+    }
+    
+    return;
+}
 
 
 
@@ -114,15 +242,18 @@ void main_loop( void )
     SDL_RenderClear( ren );
 
     // draw board background
-    SDL_Rect board_back = 
+    if ( status == GAME )
     {
-        .x = ( config.height / LINE ) / 2,
-        .y = ( config.height / LINE ) / 2,
-        .w = config.height - ( config.height / LINE ),
-        .h = config.height - ( config.height / LINE ),
-    };
-    SDL_SetRenderDrawColor( ren, 225, 205, 175, SDL_ALPHA_OPAQUE );
-    SDL_RenderFillRect( ren, &board_back );
+        SDL_Rect board_back = 
+        {
+            .x = ( config.height / LINE ) / 2,
+            .y = ( config.height / LINE ) / 2,
+            .w = config.height - ( config.height / LINE ),
+            .h = config.height - ( config.height / LINE ),
+        };
+        SDL_SetRenderDrawColor( ren, 225, 205, 175, SDL_ALPHA_OPAQUE );
+        SDL_RenderFillRect( ren, &board_back );
+    }
 
     // draw UI background
     SDL_Rect UI_back = 
@@ -189,9 +320,19 @@ void main_loop( void )
                         
                         SDL_SetWindowSize( win, config.width, config.height );
 
-                        // TODO: Destroy old text surface and texture and create new surface and texture
+                        // change font size
+                        // might be unecessary
+                        b_size = config.height / 25;
+                        h_size = b_size * 2;
+                        TTF_SetFontSize( h_font, h_size );
+                        TTF_SetFontSize( b_font, b_size );
+
+                        // change rect position and size
+                        adjust_rect();
+
+
                         // set piece size
-                        p_size = ( config.height / LINE ) / 2;
+                        p_size = ( config.height / LINE ) / 3 * 2;
                         for ( int i = 0; i < LINE ; i++ )
                         {
                             for ( int j = 0; j < LINE; j++ )
@@ -225,7 +366,7 @@ void main_loop( void )
                         {
                             // check which box is clicked
                             if ( event.button.x < ( config.height - ( config.height / LINE ) / 2 ) && event.button.x > ( config.height / LINE ) / 2 && 
-                                event.button.y < ( config.height - ( config.height / LINE ) / 2 ) && event.button.y > ( config.height / LINE ) / 2)
+                            event.button.y < ( config.height - ( config.height / LINE ) / 2 ) && event.button.y > ( config.height / LINE ) / 2)
                             {
                                 board.pieces[ board.size ].x = ( ( event.button.x + ( config.height / LINE ) / 2 ) ) / ( config.height / LINE );
                                 board.pieces[ board.size ].y = ( ( event.button.y + ( config.height / LINE ) / 2 ) ) / ( config.height / LINE );
@@ -251,9 +392,32 @@ void main_loop( void )
                         break;
                     }
                     // menu click
-                    case (MENU):
+                    case ( MENU ):
                     {
+                        // menu button
+                        ui_click();
                         
+                        
+                        break;
+                    }
+                    case ( CREATE ):
+                    {
+                        ui_click();
+
+
+
+                        break;
+                    }
+                    case ( JOIN ):
+                    {
+                        ui_click();
+
+                        break;
+                    }
+                    case ( SETTING ):
+                    {
+                        ui_click();
+
                         break;
                     }
                 }
@@ -269,6 +433,36 @@ void main_loop( void )
     // Drawing
     switch ( status )
     {
+        case ( MENU ):
+        {
+            // draw start button
+            render_ui();
+            
+            SDL_RenderCopy( ren, exit_tex, NULL, &exit_rec );
+
+
+            break;
+        }
+        case ( SETTING ):
+        {
+            render_ui();
+
+            break;
+        }
+        case ( CREATE ):
+        {
+            render_ui();
+
+            break;
+        }
+        case ( JOIN ):
+        {
+            render_ui();
+
+            // text input box for room id
+
+            break;
+        }
         case ( GAME ):
         {
             // draw board
@@ -288,14 +482,7 @@ void main_loop( void )
             }
 
             // draw UI
-            SDL_Rect con_button = 
-            {
-                .w = ( ( config.width - config.height ) / 3 ) * 2,
-                .x = config.height + ( config.width - config.height ) / 6,
-            };
-            con_button.h    = con_button.w / 2.6f;
-            con_button.y    = config.height * 2 / 3;
-            SDL_RenderCopy( ren, con_tex, NULL, &con_button );
+            SDL_RenderCopy( ren, con_tex, NULL, &con_rec );
             
 
             break;
@@ -330,9 +517,9 @@ int main( int argc, char** argv )
     while( ( file = readdir(dir) ) != NULL )
     {
         if ( !strcmp( file->d_name, "setting.config" ) )        file_check[ CONFIG_FILE ]   = true;
+        else if ( !strcmp( file->d_name, D_FONT ) )   file_check[ FONT_FILE ]     = true;
         else if ( !strcmp( file->d_name, "black.png" ) )        file_check[ BLACK_FILE ]    = true;
         else if ( !strcmp( file->d_name, "white.png" ) )        file_check[ WHITE_FILE ]    = true;
-        else if ( !strcmp( file->d_name, "confirm.png" ) )      file_check[ CONFIRM_FILE ]  = true;
     }
     for(int i = 0; i < FILE_MAX; i++)
     {
@@ -353,17 +540,17 @@ int main( int argc, char** argv )
                     fclose( fp );
                     break;
                 }
+                case ( FONT_FILE ):
+                {
+                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing font file", NULL );
+                    return 1;
+                }
                 case ( BLACK_FILE ):
                 {
                     SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
                     return 1;
                 }
                 case ( WHITE_FILE ):
-                {
-                    SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
-                    return 1;
-                }
-                case ( CONFIRM_FILE ):
                 {
                     SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_INFORMATION, "ERRO", "Missing texture file", NULL );
                     return 1;
@@ -390,7 +577,7 @@ int main( int argc, char** argv )
 
     // init
     SDL_Init( SDL_INIT_EVERYTHING );
-    win = SDL_CreateWindow( "五子棋", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
+    win = SDL_CreateWindow( "GOMOKU", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
                                                 config.width, config.height, 
                                                 SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN );
     if ( win == NULL )
@@ -430,10 +617,10 @@ int main( int argc, char** argv )
     // load texture
     w_tex   = IMG_LoadTexture( ren, "white.png" );
     b_tex   = IMG_LoadTexture( ren, "black.png" );
-    con_tex = IMG_LoadTexture( ren, "confirm.png" );
-    assert( w_tex && b_tex && con_tex );
+    assert( w_tex && b_tex );
 
     // set the position of where each pieces should be at
+    p_size = ( config.height / LINE ) / 3 * 2;
     for ( int i = 0; i < LINE ; i++ )
     {
         for ( int j = 0; j < LINE; j++ )
@@ -447,6 +634,45 @@ int main( int argc, char** argv )
             };
         }
     }
+
+    // load font
+    TTF_Init();
+    b_size = config.height / 25;
+    h_size = b_size * 2;
+    h_font = TTF_OpenFont( D_FONT, h_size );
+    b_font = TTF_OpenFont( D_FONT, b_size );
+
+    // create surface from font
+    menu_sur    = TTF_RenderUTF8_Blended( h_font, "MENU", F_COLOR );
+    con_sur     = TTF_RenderUTF8_Blended( h_font, "CONFIRM", F_COLOR );
+    setting_sur = TTF_RenderUTF8_Blended( h_font, "SETTING", F_COLOR );
+    create_sur  = TTF_RenderUTF8_Blended( h_font, "CREATE", F_COLOR );
+    join_sur    = TTF_RenderUTF8_Blended( h_font, "JOIN" , F_COLOR );
+    exit_sur    = TTF_RenderUTF8_Blended( h_font, "EXIT" , F_COLOR );
+    
+
+
+    // create texture from surface
+    menu_tex    = SDL_CreateTextureFromSurface( ren, menu_sur );
+    con_tex     = SDL_CreateTextureFromSurface( ren, con_sur );
+    setting_tex = SDL_CreateTextureFromSurface( ren, setting_sur );
+    create_tex  = SDL_CreateTextureFromSurface( ren, create_sur );
+    join_tex    = SDL_CreateTextureFromSurface( ren, join_sur );
+    exit_tex    = SDL_CreateTextureFromSurface( ren, exit_sur );
+
+
+    // destroy surface after texture is created
+    SDL_FreeSurface( menu_sur );
+    SDL_FreeSurface( con_sur );
+    SDL_FreeSurface( setting_sur );
+    SDL_FreeSurface( create_sur );
+    SDL_FreeSurface( join_sur );
+    SDL_FreeSurface( exit_sur );
+
+
+    // calculate rect position
+    adjust_rect();
+
 
 
 
@@ -466,11 +692,27 @@ int main( int argc, char** argv )
     fwrite( &config, sizeof (setting), 1, fp );
     fclose( fp );
 
+    // free texture
     SDL_DestroyTexture( w_tex );
     SDL_DestroyTexture( b_tex );
+    SDL_DestroyTexture( menu_tex );
+    SDL_DestroyTexture( con_tex );
+    SDL_DestroyTexture( setting_tex );
+    SDL_DestroyTexture( create_tex );
+    SDL_DestroyTexture( join_tex );
+    SDL_DestroyTexture( exit_tex );
+
+    // close font
+    TTF_CloseFont( h_font );
+    TTF_CloseFont( b_font );
+
+    // free renderer and window
     SDL_DestroyRenderer( ren );
     SDL_DestroyWindow( win );
+
+    // quit SDL
     SDLNet_Quit();
+    TTF_Quit();
     IMG_Quit();
     SDL_Quit();
 
