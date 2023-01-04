@@ -13,7 +13,7 @@ main: main.c
 
 wasm: main.c
 #	$(WC) $(WFLAG) helper.c -c
-	$(WC) $(WFLAG) $(OBJ) $< -o index.html
+	$(WC) $(WFLAG) $(OBJ) $< -o index.js
 
 test: main.c
 #	$(CC) $(CFLAG) helper.c -c
